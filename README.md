@@ -17,6 +17,18 @@ DeepSeek Harness（dsh）的西语学习插件。**六类本地判分的练习**
 > 四种完成时）、`ser/estar/ir` 这类完全不规则动词、`mano`（阴性却是 -o 结尾）、
 > `el agua`（阴性却用 el）、`luz → luces` 这类坑都在引擎里处理。
 
+## 界面
+
+<p align="center">
+  <img src="assets/screenshots/1-practice.png" width="49%" alt="练习：变位题，带「先学一下」「看答案」" />
+  <img src="assets/screenshots/2-scenario.png" width="49%" alt="情景造句：给场景写一句，提交批改" />
+</p>
+<p align="center">
+  <img src="assets/screenshots/3-progress.png" width="49%" alt="进度与设置：难度、题型、时态、学习方式、讲解模型" />
+</p>
+
+左侧栏「西语」一行点开就是练习页；右上角 `✕` 回到会话。
+
 ## 设计：混合引擎
 
 职责分工是刻意划的：
