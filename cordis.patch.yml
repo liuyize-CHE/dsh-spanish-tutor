@@ -1,0 +1,8 @@
+# dsh-spanish-tutor bundle patch: 把双半身插件插进 profile 的插件树。
+#
+# node 半身（exports "."）跑在宿主进程：提供 /dsh-spanish/* 路由、四个模型工具、
+# 以及「答错时请模型讲解」的 LLM 调用。
+# 浏览器半身由 package.json 的 dsh.client 声明加载（exports "./client"）。
+- insert:
+    - id: spanish-tutor
+      name: 'dsh-spanish-tutor'

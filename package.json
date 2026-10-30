@@ -1,0 +1,60 @@
+{
+  "name": "dsh-spanish-tutor",
+  "version": "0.2.0",
+  "description": "西语练习：变位、阴阳性、认词、填空、语法专项与情景造句。判分在本地引擎，模型只负责讲解。 / Spanish practice drills with local grading; the model only teaches.",
+  "type": "module",
+  "main": "lib/index.js",
+  "exports": {
+    ".": "./lib/index.js",
+    "./client": "./lib/client.js",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "lib",
+    "cordis.patch.yml",
+    "README.md"
+  ],
+  "keywords": [
+    "deepseek-harness",
+    "dsh",
+    "dsh-plugin",
+    "spanish",
+    "español",
+    "conjugation",
+    "language-learning"
+  ],
+  "author": "liuyize-CHE",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/liuyize-CHE/dsh-spanish-tutor.git"
+  },
+  "homepage": "https://github.com/liuyize-CHE/dsh-spanish-tutor#readme",
+  "bugs": {
+    "url": "https://github.com/liuyize-CHE/dsh-spanish-tutor/issues"
+  },
+  "engines": {
+    "node": ">=20",
+    "dsh": ">=0.2.0-rc.1"
+  },
+  "scripts": {
+    "test": "node test/all.mjs",
+    "test:http": "node test/standalone-server.mjs",
+    "test:live": "node test/live-all.mjs"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web",
+      "inject": [
+        "@deepseek-ai/dsh-client-ui-conversation",
+        "@deepseek-ai/dsh-client-ui-sidebar"
+      ]
+    }
+  },
+  "peerDependencies": {
+    "react": "^18.2.0"
+  }
+}

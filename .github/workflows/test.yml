@@ -1,0 +1,27 @@
+name: test
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  offline:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      # 全部离线：不需要 API key，也不连 DSH。
+      # 1530 条断言里包括「答案与变位引擎交叉验证」和「前端接线有没有漏」。
+      - name: Run offline test suites
+        run: node test/all.mjs
+
+      # 用装好的 lib/ 起一个真 node:http 服务，把六类题型走一遍完整 HTTP 路由
+      # —— 这条曾经抓出「出题能过、判分 400」的真 bug。
+      - name: Full HTTP round-trip against the installed code
+        run: node test/standalone-server.mjs
