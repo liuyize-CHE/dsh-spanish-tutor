@@ -141,6 +141,20 @@ dsh plugin --profile web add github:liuyize-CHE/dsh-spanish-tutor
 选择题不渲染输入框，以前 `inputRef` 是 `null`，于是做选择题时键盘完全用不了，
 连 Enter 都不响应。现在键盘监听挂在卡片容器上（`tabIndex: 0`），只对选择题生效。
 
+### 错题处理
+
+答**错**（`wrong`）的题会在**本局末尾再出现一次** —— 刚答错的词隔几道题再问一次，
+正是短时记忆的窗口。每题最多重出一次：`requeuedRef` 记录已重出的 id，
+否则「答错 → 重出 → 再答错」会无限循环。
+
+只差重音（`accent`）**不重出** —— 和 SRS 的 `nextLevel()` 口径一致，那边 accent 是不升不降。
+
+一局做完，结算页除了分数还会列出**本轮错题回看**：题干、你答的、正确答案，
+语法题还带本地规则（零延迟可读，不依赖模型）。
+
+> 重出的题会让「作答次数」大于「题数」，所以结算按 `correct + accent + wrong` 算作答次数，
+> 并在两者不同时额外注明。
+
 ### 难度只有三档
 
 难度可选项是 **A1 / A2 / B1**。B2 和 C1 已下架：词库里它们是 **0 个词**，
@@ -213,7 +227,7 @@ host 半身在 `/dsh-spanish` 前缀下提供：
 
 ```bash
 # 离线：不需要 DSH 在跑
-node test/all.mjs                  # 1585 条断言（10 个套件）
+node test/all.mjs                  # 1608 条断言（10 个套件）
 node test/standalone-server.mjs    # 75 条：六类题型走真实 HTTP（也不用重启 DSH）
 
 # 实机：DSH 得在跑，且必须已加载最新代码
@@ -265,7 +279,7 @@ node test/live-kinds.mjs [baseUrl]      # 六类题型 + 情景造句
 | `scenario.test.mjs` | 43 | 情景造句：JSON 解析健壮性、token 防篡改 |
 | `host.test.mjs` | 143 | 路由、工具、落盘、防作弊、**降级**、选项契约 |
 | `host-llm.test.mjs` | 38 | **模型集成**：跟随/覆盖/不烧 token/报错降级 |
-| `client.test.mjs` | 108 | 客户端激活、面板接线、**选项归一 / 键盘（真调用）** |
+| `client.test.mjs` | 131 | 客户端激活、面板接线、**选项归一 / 键盘 / 错题重出（真调用）** |
 
 **实机套件** `live.mjs` 需要 DSH 正在运行，验证的是「装进去之后真的能用」：
 路由可达、出题判分、防作弊、设置持久化等。

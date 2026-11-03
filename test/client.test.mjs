@@ -433,10 +433,11 @@ for (const [ep, label] of ENDPOINTS) {
 // 正则检查的是「代码长得对不对」，不是「点了之后对不对」——所以这个 bug 一路活着。
 //
 // 现在改成：取出引擎产出的**真实选项**喂给 normalizeChoice，再把结果交给 judge。
-const { normalizeChoice, pickIndexFromKey } = exportsObj.__test ?? {};
+const { normalizeChoice, pickIndexFromKey, shouldRequeue } = exportsObj.__test ?? {};
 
 ok(typeof normalizeChoice === 'function', '客户端导出 normalizeChoice（可被真调用）');
 ok(typeof pickIndexFromKey === 'function', '客户端导出 pickIndexFromKey（可被真调用）');
+ok(typeof shouldRequeue === 'function', '客户端导出 shouldRequeue（可被真调用）');
 
 if (typeof normalizeChoice === 'function') {
   // —— 认词题：{id, text}，答案必须是 text 而不是 id ——
@@ -522,6 +523,70 @@ if (typeof pickIndexFromKey === 'function') {
   eq(pickedByKey.value, 'repetir', '按 1 取到的是第一个选项的 text');
   eq(judge(keysQ, pickedByKey.value).result, 'correct', '按键选出的答案能判对');
 }
+
+// ── 错题重出：该重出的重出，不该的死活不重出 ──
+//
+// 答错只影响下一轮（SRS 退两级）太慢了 —— 刚答错的词隔几道题再问一次
+// 才是短时记忆的窗口。但"重出"很容易写成死循环：答错→重出→再答错→再重出。
+if (typeof shouldRequeue === 'function') {
+  // 该重出的
+  eq(shouldRequeue('conj:tener:presente:1s', 'wrong', new Set()), true,
+    '真错 → 本轮末尾重出');
+  eq(shouldRequeue('vocab:repetir:zh2es', 'wrong', new Set()), true,
+    '认词答错 → 重出');
+
+  // 不该重出的
+  eq(shouldRequeue('conj:tener:presente:1s', 'correct', new Set()), false,
+    '答对 → 不重出');
+  eq(shouldRequeue('conj:tener:presente:1s', 'accent', new Set()), false,
+    '只差重音 → 不重出（和 SRS 的 accent 不升不降一致）');
+  eq(shouldRequeue('conj:tener:presente:1s', 'revealed', new Set()), false,
+    '看了答案 → 不重出（没作答，不算错）');
+  eq(shouldRequeue('conj:tener:presente:1s', undefined, new Set()), false,
+    '还没有判分结果 → 不重出');
+
+  // 防死循环：已经重出过一次的不再重出（第二次答错也不）
+  eq(shouldRequeue('conj:tener:presente:1s', 'wrong', new Set(['conj:tener:presente:1s'])), false,
+    '同一题第二次答错 → 不再重出（防死循环）');
+  eq(shouldRequeue('conj:vivir:presente:1s', 'wrong', new Set(['conj:tener:presente:1s'])), true,
+    '别的题答错 → 仍然重出');
+
+  // 边界
+  eq(shouldRequeue(undefined, 'wrong', new Set()), false, '没有题 id → 不重出');
+  eq(shouldRequeue('', 'wrong', new Set()), false, '空 id → 不重出');
+  eq(shouldRequeue('x', 'wrong', undefined), true, 'already 缺省也不崩');
+
+  // 模拟一整轮：3 题，第一题错两次，第二题只差重音
+  const requeued = new Set();
+  const round = [{ id: 'a' }, { id: 'b' }, { id: 'c' }];
+  const answers = ['wrong', 'accent', 'correct'];
+  let requeues = 0;
+  for (let i = 0; i < round.length; i++) {
+    if (shouldRequeue(round[i].id, answers[i], requeued)) {
+      requeued.add(round[i].id);
+      round.push(round[i]); // 追加到末尾
+      requeues++;
+    }
+  }
+  eq(requeues, 1, '一轮里只有真错的 a 被重出一次');
+  eq(round.length, 4, '题数从 3 变成 4');
+  // 重出的 a 再答错也不该再追加
+  eq(shouldRequeue('a', 'wrong', requeued), false, '重出的 a 再错也不追加（不会无限循环）');
+}
+
+// ── 结算页的错题回看 ──
+//
+// 以前结算只有一个 7/10，做完一局最想看的"我错在哪"完全没有。
+ok(SOURCE.includes('wrongList'), '有错题列表状态');
+ok(SOURCE.includes('dsh-es-review'), '结算页渲染错题回看');
+ok(SOURCE.includes('noWrong'), '没错题时有文案（不能空白一片）');
+// 错题回看要显示三样：你答的、正确的、语法题的本地规则
+ok(/T\.yourAnswer/.test(SOURCE), '错题回看显示「你的答案」');
+ok(/item\.expected/.test(SOURCE), '错题回看显示正确答案');
+ok(/item\.question\?\.rule/.test(SOURCE), '错题回看显示本地规则（不依赖模型）');
+// 重出的题会让作答次数 > 题数，结算不能把二者混为一谈
+ok(/score\.correct \+ score\.accent \+ score\.wrong/.test(SOURCE), '作答次数按三道计数求和');
+ok(/T\.attempts/.test(SOURCE), '作答次数与题数不同时给出说明');
 
 // 3) 新题型必须在渲染层有专门分支（题干/标签/规则）
 ok(SOURCE.includes('promptOf'), '有统一的题干取值函数');
