@@ -110,8 +110,11 @@ dsh plugin --profile web add github:liuyize-CHE/dsh-spanish-tutor
 
 ### 界面
 - **左侧栏的「西语」一行**：点这一行任意位置（图标或文字）在中间栏打开练习面板
-- **输入框右侧的旗标胶囊**：打开同一个面板（有到期卡片时显示数字角标）
 - 面板右上角的 ✕ 回到会话
+
+入口只有侧栏这一处。输入框右侧原本挂着一颗「🇪🇸 西语」胶囊，会和权限、模型选择挤在同一行，
+观感差，已经去掉；`shell.overlay` 浮层兜底也随它一起删了——
+没有第二个入口之后，那条退路变成了死代码。
 
 面板是宿主 root 作用域 `main` keyed slot 里的一页，不是浮窗。这决定了两个细节：
 
@@ -177,7 +180,7 @@ host 半身在 `/dsh-spanish` 前缀下提供：
 
 ```bash
 # 离线：不需要 DSH 在跑
-node test/all.mjs                  # 1530 条断言（10 个套件）
+node test/all.mjs                  # 1517 条断言（10 个套件）
 node test/standalone-server.mjs    # 75 条：六类题型走真实 HTTP（也不用重启 DSH）
 
 # 实机：DSH 得在跑，且必须已加载最新代码
@@ -229,7 +232,7 @@ node test/live-kinds.mjs [baseUrl]      # 六类题型 + 情景造句
 | `scenario.test.mjs` | 43 | 情景造句：JSON 解析健壮性、token 防篡改 |
 | `host.test.mjs` | 131 | 路由、工具、落盘、防作弊、**降级** |
 | `host-llm.test.mjs` | 38 | **模型集成**：跟随/覆盖/不烧 token/报错降级 |
-| `client.test.mjs` | 84 | 客户端能否被宿主激活、面板接线是否正确 |
+| `client.test.mjs` | 71 | 客户端能否被宿主激活、面板接线是否正确 |
 
 **实机套件** `live.mjs` 需要 DSH 正在运行，验证的是「装进去之后真的能用」：
 路由可达、出题判分、防作弊、设置持久化等。

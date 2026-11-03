@@ -225,12 +225,15 @@ try {
 }
 eq(threw, null, 'apply 执行不抛错');
 
-// 注入了四个槽位
+// 注入了两个槽位。输入框右侧的胶囊和 shell.overlay 兜底都已删除 ——
+// 聊天栏那颗胶囊会挤在权限/模型选择旁边，观感不好，用户要求去掉。
+// 现在唯一的入口是侧栏那一行，打开由宿主自己做，插件不需要插手。
 ok(injectedSlots.includes('main'), '注入 main（面板本体）');
-ok(injectedSlots.includes('conversation.input.right'), '注入 conversation.input.right');
 ok(injectedSlots.includes('sidebar.panellist'), '注入 sidebar.panellist');
-ok(injectedSlots.includes('shell.overlay'), '注入 shell.overlay（兜底）');
-eq(slotsRegistered.length, 4, '注册了 4 个槽位组件');
+eq(injectedSlots.includes('conversation.input.right'), false, '不再注入 conversation.input.right（聊天栏胶囊已删）');
+eq(injectedSlots.includes('shell.overlay'), false, '不再注入 shell.overlay（兜底浮层已随胶囊一起删）');
+eq(slotsRegistered.length, 2, '注册了 2 个槽位组件');
+eq(slotsRegistered.map((e) => e.options.name).sort(), ['main', 'sidebar.panellist'], '槽位恰好是 main + sidebar.panellist');
 
 // 每个注册项结构正确：list/single 用 id，keyed 的 main 用 key
 for (const entry of slotsRegistered) {
@@ -349,61 +352,25 @@ layoutCalls.length = 0;
 mainInject.closePanel();
 eq(layoutCalls, [null], 'closePanel 让宿主回到会话界面');
 
-// 胶囊组件：递归渲染后应该是一个 button
-const capsuleEntry = slotsRegistered.find((e) => e.options.id === 'dsh-spanish-capsule');
-React.__reset();
-const capsuleRender = renderDeep(capsuleEntry.component, {});
-eq(capsuleRender.node?.type, 'button', '胶囊最终渲染成 button');
-ok(String(capsuleRender.node?.props?.className ?? '').includes('dsh-es-capsule'), '胶囊带样式类');
-ok(capsuleRender.depth >= 1, '胶囊经过包装层（递归渲染生效）');
-
-// 胶囊里应该是 SVG 旗标，不是国旗表情（Windows 会渲染成 "ES" 字母）
-const capChildren = capsuleRender.node?.children ?? [];
-const flagEl = capChildren.find((c) => typeof c?.type === 'function' && c.type.name === 'FlagIcon');
-ok(flagEl !== undefined, '胶囊图标是 FlagIcon 组件');
-eq(flagEl?.props?.size, 14, '胶囊旗标尺寸 14');
-
-// 点胶囊 → 交给宿主布局服务选中面板
-layoutCalls.length = 0;
-capsuleRender.node.props.onClick();
-eq(layoutCalls, ['dsh-spanish'], '胶囊点击选中西语面板');
-
 // 侧栏图标：只画旗标，文字和点击区域归宿主
 const entryRender = renderDeep(listEntry.component, { size: 18, active: true });
 eq(entryRender.node?.type, 'svg', '侧栏入口渲染成 svg 图标');
 eq(entryRender.node?.props?.width, 18, '侧栏图标跟随宿主给的 size');
 eq(findNode(entryRender.node, (n) => n.type === 'button'), null, '侧栏入口不含自己的按钮（整行由宿主渲染）');
 
-// 浮层兜底初始不可见（渲染 null）
-const panelEntry = slotsRegistered.find((e) => e.options.id === 'dsh-spanish-fallback');
-React.__reset();
-const panelRender = renderDeep(panelEntry.component, {});
-eq(panelRender.node, null, '浮层兜底初始不显示');
-
-// ── 没有 layout 服务时，胶囊要退回浮层，不能点了没反应 ──
-const noLayoutRun = makeCtx(undefined);
-threw = null;
-try {
-  exportsObj.apply(noLayoutRun.ctx);
-} catch (err) {
-  threw = err;
-}
-eq(threw, null, '没有 layout 服务时 apply 也不抛错');
-
-const noLayoutOverlay = bySlot(noLayoutRun.slotsRegistered, 'shell.overlay');
-const noLayoutCapsule = bySlot(noLayoutRun.slotsRegistered, 'conversation.input.right');
-React.__reset();
-const overlayBefore = renderDeep(noLayoutOverlay.component, {});
-eq(overlayBefore.node, null, '浮层开始是隐藏的');
-React.__reset();
-renderDeep(noLayoutCapsule.component, {}).node.props.onClick();
-React.__reset();
-const overlayAfter = renderDeep(noLayoutOverlay.component, {});
-ok(overlayAfter.node !== null, '没有 layout 服务时点击胶囊会打开浮层');
+// ── 聊天栏必须是干净的 ──
+//
+// 输入框右侧原本挂着一颗「🇪🇸 西语」胶囊，和权限、模型选择挤在一行，观感差。
+// 这条守的是它不会再被加回来。
+eq(findNode(entryRender.node, (n) => String(n.props?.title ?? '').includes('西语')), null,
+  '侧栏图标自身不带 title（tooltip 由宿主的整行提供）');
+eq(/dsh-es-capsule/.test(SOURCE), false, '样式表里不再有胶囊类');
+eq(/dsh-es-badge/.test(SOURCE), false, '样式表里不再有角标类');
+eq(SOURCE.includes('conversation.input.right'), false, '源码里不再引用聊天栏槽位');
 
 // ─────────────────── 样式注入 ───────────────────
 
-ok(effects.length >= 5, `注入了 ${effects.length} 个 effect（样式+槽位）`);
+ok(effects.length >= 3, `注入了 ${effects.length} 个 effect（样式+两个槽位）`);
 
 // 不再用国旗表情：Windows 没有国旗字形，会把区域指示符渲染成 "ES" 两个字母
 ok(!SOURCE.includes('🇪🇸'), '不再使用 🇪🇸 表情');
