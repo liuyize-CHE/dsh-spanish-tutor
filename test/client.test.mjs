@@ -380,6 +380,13 @@ ok(effects.length >= 3, `注入了 ${effects.length} 个 effect（样式+两个�
 ok(!SOURCE.includes('🇪🇸'), '不再使用 🇪🇸 表情');
 ok(SOURCE.includes('FlagIcon'), '有 SVG 旗标组件');
 
+// ── 选择题必须把键盘监听挂在容器上 ──
+// （挂在 input 上的话选择题根本收不到 —— 选择题不渲染输入框）
+ok(/onKeyDown: isChoice \? onChoiceKeyDown/.test(SOURCE), '选择题的 keydown 挂在卡片容器上');
+ok(/tabIndex: isChoice \? 0 : -1/.test(SOURCE), '选择题容器可聚焦（否则收不到按键）');
+ok(/boxRef\.current\.focus\(\)/.test(SOURCE), '选择题聚焦卡片容器而非输入框');
+ok(/i < 9 \? `\$\{i \+ 1\}\. \$\{label\}`/.test(SOURCE), '选项显示序号，让快捷键可发现');
+
 // ─────────────────── 源码层面检查 ───────────────────
 
 // 必须是 __ModuleLoader__ 格式，不能是 ESM
@@ -426,9 +433,10 @@ for (const [ep, label] of ENDPOINTS) {
 // 正则检查的是「代码长得对不对」，不是「点了之后对不对」——所以这个 bug 一路活着。
 //
 // 现在改成：取出引擎产出的**真实选项**喂给 normalizeChoice，再把结果交给 judge。
-const { normalizeChoice } = exportsObj.__test ?? {};
+const { normalizeChoice, pickIndexFromKey } = exportsObj.__test ?? {};
 
 ok(typeof normalizeChoice === 'function', '客户端导出 normalizeChoice（可被真调用）');
+ok(typeof pickIndexFromKey === 'function', '客户端导出 pickIndexFromKey（可被真调用）');
 
 if (typeof normalizeChoice === 'function') {
   // —— 认词题：{id, text}，答案必须是 text 而不是 id ——
@@ -469,6 +477,50 @@ if (typeof normalizeChoice === 'function') {
     const got = normalizeChoice(raw).value;
     eq(/^\d+$/.test(got), false, `选项不会被归一成纯序号：${JSON.stringify(raw)} → ${JSON.stringify(got)}`);
   }
+}
+
+// ── 按键 → 第几个选项 ──
+//
+// 以前选择题没有输入框，而 keydown 挂在 input 上，于是做选择题时键盘全废。
+// 现在挂到卡片容器上并按 1..9 / a..i 选选项。这里真调用解析函数。
+if (typeof pickIndexFromKey === 'function') {
+  // 数字键
+  eq(pickIndexFromKey('1', 4), 0, '按 1 选第一个');
+  eq(pickIndexFromKey('4', 4), 3, '按 4 选第四个');
+  eq(pickIndexFromKey('5', 4), -1, '按 5 超出选项数 → 不处理');
+  eq(pickIndexFromKey('0', 4), -1, '按 0 不是有效选项');
+
+  // 字母键
+  eq(pickIndexFromKey('a', 4), 0, '按 a 选第一个');
+  eq(pickIndexFromKey('d', 4), 3, '按 d 选第四个');
+  eq(pickIndexFromKey('A', 4), 0, '大写 A 同样有效');
+  eq(pickIndexFromKey('e', 4), -1, '按 e 超出选项数 → 不处理');
+
+  // 不该被吃掉的其他键
+  eq(pickIndexFromKey('Enter', 4), -1, 'Enter 不当作选项');
+  eq(pickIndexFromKey('Tab', 4), -1, 'Tab 不当作选项');
+  eq(pickIndexFromKey(' ', 4), -1, '空格不当作选项');
+  eq(pickIndexFromKey('ñ', 4), -1, '非 ASCII 字母不当作选项');
+
+  // 边界
+  eq(pickIndexFromKey('1', 0), -1, '选项数为 0 时不处理');
+  eq(pickIndexFromKey(null, 4), -1, 'key 为 null 不崩');
+  eq(pickIndexFromKey('1', Number.NaN), -1, '选项数 NaN 不处理');
+
+  // 端到端联动：按键 → 索引 → 取选项 → 归一 → 判分必须对
+  const keysQ = {
+    kind: 'vocab',
+    answer: 'repetir',
+    choices: [
+      { id: '0', text: 'repetir' },
+      { id: '1', text: 'pagar' },
+      { id: '2', text: 'vivir' },
+      { id: '3', text: 'llamar' },
+    ],
+  };
+  const pickedByKey = normalizeChoice(keysQ.choices[pickIndexFromKey('1', keysQ.choices.length)]);
+  eq(pickedByKey.value, 'repetir', '按 1 取到的是第一个选项的 text');
+  eq(judge(keysQ, pickedByKey.value).result, 'correct', '按键选出的答案能判对');
 }
 
 // 3) 新题型必须在渲染层有专门分支（题干/标签/规则）

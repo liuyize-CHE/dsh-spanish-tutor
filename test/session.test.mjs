@@ -12,7 +12,7 @@ import {
   judge,
   INTERVALS_DAYS,
 } from '../lib/engine/session.js';
-import { BANK, bankAtLevel, VERBS, NOUNS, ADJECTIVES } from '../lib/engine/bank.js';
+import { BANK, bankAtLevel, VERBS, NOUNS, ADJECTIVES, LEVELS, levelOrder } from '../lib/engine/bank.js';
 import { conjugate } from '../lib/engine/conjugator.js';
 import { nounInfo, guessGender } from '../lib/engine/nouns.js';
 
@@ -282,6 +282,78 @@ const round2 = buildSession(BANK, {
 });
 ok(round2.unseenCount >= 0, '第二局 unseenCount 正常');
 ok(round2.questions.length === 5, '第二局也是 5 题');
+
+// ─────────────────── 等级过滤：填空/语法题也不能超纲 ───────────────────
+//
+// 守一个实测出来的 bug：bankAtLevel() 只过滤动词/名词/形容词，
+// 而 CLOZE_BANK / GRAMMAR_BANK 不在 bank 里，被**整个**塞进候选池。
+// 选 A1 时抽 40 局、400 道填空/语法题，其中 188 道（47%）不是 A1。
+//
+// 所以这里不测「某个函数被调用过」，而是直接统计**真出出来的题**的等级。
+{
+  for (const level of ['A1', 'A2', 'B1']) {
+    const bank = bankAtLevel(BANK, level);
+    let total = 0;
+    let over = 0;
+    const seen = new Set();
+    for (let seed = 1; seed <= 12; seed++) {
+      const r = buildSession(bank, {
+        kinds: ['cloze', 'grammar'],
+        tenses: ['presente'],
+        size: 10,
+        seed,
+        level,
+      });
+      for (const q of r.questions) {
+        total++;
+        seen.add(q.level ?? 'A1');
+        const allowed = bankAtLevelLevels(level);
+        if (!allowed.includes(q.level ?? 'A1')) over++;
+      }
+    }
+    ok(total > 0, `${level}：确实抽到了填空/语法题（${total} 道）`);
+    eq(over, 0, `${level}：抽出的题没有一道超纲`);
+    for (const lv of seen) {
+      ok(bankAtLevelLevels(level).includes(lv), `${level}：出现的等级 ${lv} 在允许范围内`);
+    }
+  }
+
+  // 反向验证：不传 level 时保持旧行为（不过滤），确保过滤是 level 参数引入的
+  const leaky = buildSession(bankAtLevel(BANK, 'A1'), {
+    kinds: ['cloze', 'grammar'],
+    tenses: ['presente'],
+    size: 10,
+    seed: 3,
+  });
+  const leakyLevels = leaky.questions.map((q) => q.level ?? 'A1');
+  ok(leakyLevels.some((lv) => lv !== 'A1'),
+    '不传 level 时会出现非 A1 的题（说明过滤确实由 level 参数触发）');
+}
+
+/** 某个难度允许出现的等级集合，独立实现一遍，避免和被测代码互相印证。 */
+function bankAtLevelLevels(max) {
+  const order = ['A1', 'A2', 'B1'];
+  const idx = order.indexOf(max);
+  return idx < 0 ? order : order.slice(0, idx + 1);
+}
+
+// ─────────────────── 等级表：B2 / C1 不该再出现 ───────────────────
+//
+// 词库里 B2 / C1 是 0 个词，留着这两档等于给用户一个没效果的开关
+//（实测 B1/B2/C1 出题完全相同）。已下架，这里钉住。
+{
+  ok(!LEVELS.includes('B2'), 'LEVELS 不含 B2（词库没有 B2 词）');
+  ok(!LEVELS.includes('C1'), 'LEVELS 不含 C1（词库没有 C1 词）');
+  eq(LEVELS, ['A1', 'A2', 'B1'], 'LEVELS 就是三档');
+
+  // 越界的等级不能把词库清空 —— 老设置里存着 'C1' 时要有兜底
+  const fallback = bankAtLevel(BANK, 'C1');
+  eq(fallback.verbs.length, VERBS.length, '未知等级按「全部」处理，不清空词库');
+
+  // levelOrder 也要跟着收窄
+  eq(levelOrder('A1'), ['A1'], 'levelOrder(A1) 只有 A1');
+  eq(levelOrder('B1'), ['A1', 'A2', 'B1'], 'levelOrder(B1) 含全部三档');
+}
 
 // ─────────────────────────── 报告 ───────────────────────────
 
