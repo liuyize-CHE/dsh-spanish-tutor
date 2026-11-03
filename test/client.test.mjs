@@ -372,6 +372,20 @@ eq(/dsh-es-capsule/.test(SOURCE), false, '样式表里不再有胶囊类');
 eq(/dsh-es-badge/.test(SOURCE), false, '样式表里不再有角标类');
 eq(SOURCE.includes('conversation.input.right'), false, '源码里不再引用聊天栏槽位');
 
+// ── 正确率口径与局数 ──
+//
+// C1：统计口径（correct/answered，重音不算对）和 SRS 口径（accent 不升不降）
+//     不一致。两个都对，但界面必须说清楚，否则用户以为重音错被算成完全错。
+// C2：sessions 以前是从没 += 过的死字段，现在真计数并显示。
+ok(SOURCE.includes('state.accuracy'), '正确率用服务端下发的 accuracy（不重复实现口径）');
+ok(SOURCE.includes('accentNote'), '有「只差重音」的说明文案');
+ok(SOURCE.includes('accuracy.strict'), '显示完全正确率');
+ok(SOURCE.includes('accuracy.lenient'), '同时给出把重音算半对的对照值');
+ok(SOURCE.includes('state.stats.sessions'), '显示已做局数（sessions 不再是死字段）');
+// 旧代码是客户端自己算的：Math.round((correct / answered) * 100)
+eq(/Math\.round\(\(state\.stats\.correct \/ state\.stats\.answered\)/.test(SOURCE), false,
+  '客户端不再自己算正确率（口径只留一处）');
+
 // ─────────────────── 样式注入 ───────────────────
 
 ok(effects.length >= 3, `注入了 ${effects.length} 个 effect（样式+两个槽位）`);

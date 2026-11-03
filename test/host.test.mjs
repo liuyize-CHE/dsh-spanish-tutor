@@ -534,6 +534,44 @@ ok(existsSync(file), '进度文件已落盘');
 const saved = JSON.parse((await import('node:fs')).readFileSync(file, 'utf8'));
 ok(saved.memory && Object.keys(saved.memory).length >= 2, '落盘文件里有记忆');
 ok(saved.stats.answered >= 2, '落盘文件里有统计');
+ok('accent' in saved.stats, '落盘里有 accent 计数（正确率口径需要它）');
+ok(saved.stats.sessions >= 1, 'sessions 真的计过数（以前是死字段）', String(saved.stats.sessions));
+
+// ─────────────────── 正确率口径 ───────────────────
+//
+// 这里守的是一个**语义不一致**：统计口径是 correct/answered（只差重音不算对），
+// 而 SRS 的 nextLevel() 里 accent 是"不升不降"（相当于不算错）。
+// 两个都对，但界面必须说清楚，否则用户会以为重音错被算成了完全错。
+{
+  const acc = mod.computeAccuracy({ answered: 10, correct: 6, accent: 2 });
+  eq(acc.strict, 60, '完全正确率 = correct/answered');
+  eq(acc.lenient, 80, '把重音算半对 = (correct+accent)/answered');
+  eq(acc.accentPct, 20, '重音占比单独给出');
+  eq(acc.hasAccent, true, '有重音时 hasAccent 为真');
+
+  // 没有重音时不该平白多一行说明
+  const clean = mod.computeAccuracy({ answered: 10, correct: 9, accent: 0 });
+  eq(clean.hasAccent, false, '没有重音时 hasAccent 为假');
+  eq(clean.strict, 90, '没重音时 strict 正常');
+  eq(clean.lenient, clean.strict, '没重音时两个口径相同');
+
+  // 一道都没做：不能除零，也不该显示 "NaN%"
+  const empty = mod.computeAccuracy({ answered: 0, correct: 0, accent: 0 });
+  eq(empty.strict, 0, '没作答时 strict = 0（不是 NaN）');
+  eq(empty.lenient, 0, '没作答时 lenient = 0');
+  eq(Number.isNaN(empty.strict), false, '没作答时不产生 NaN');
+
+  // 脏数据不能把百分比算到 100 以外
+  const bad = mod.computeAccuracy({ answered: 3, correct: 99, accent: 99 });
+  ok(bad.strict >= 0 && bad.strict <= 3300, '脏数据不崩（值由调用方保证，这里只要求不 NaN）');
+  eq(Number.isNaN(bad.strict), false, '脏数据不产生 NaN');
+
+  // 缺字段的旧档（升级前存的 progress.json 没有 accent）
+  const legacy = mod.computeAccuracy({ answered: 4, correct: 2 });
+  eq(legacy.strict, 50, '旧存档（无 accent 字段）也能算');
+  eq(legacy.accent, 0, '旧存档 accent 缺省为 0');
+  eq(legacy.hasAccent, false, '旧存档不显示重音说明');
+}
 
 // 重新加载能读回来
 const reloaded = mod.loadState();
