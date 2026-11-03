@@ -317,6 +317,43 @@ ok(stateAfter.json?.progress?.tracked >= 2, '记录了卡片');
   }
 }
 
+// ─────────────────── 选项的契约：id 是序号，text 才是答案 ───────────────────
+//
+// 守的是一个真机 bug：认词题的选项是 {id:'0', text:'repetir'}，客户端当时按
+// `c.value ?? c.id ?? c.text` 回退，于是点「repetir」提交的是 "0"，判分永远错，
+// 模型还把 "0" 解释成"等于没作答"。
+//
+// 上面那段 HTTP 测试用的是 `c.value ?? c.text ?? c.id`（正确顺序），所以它测不出来 ——
+// 这里显式钉住引擎侧的契约，让「把 id 当答案」这件事在两端都无处可藏。
+{
+  const sess = await call('POST', '/dsh-spanish/session', {
+    size: 4,
+    kinds: ['vocab', 'grammar'],
+    level: 'A1',
+    seed: 7,
+  });
+  for (const q of sess.json?.questions ?? []) {
+    if (!Array.isArray(q.choices) || q.choices.length === 0) continue;
+
+    // 认词/语法题的选项必须是 {id, text}，且 id 是序号
+    const allHaveText = q.choices.every((c) => typeof c.text === 'string' && c.text !== '');
+    eq(allHaveText, true, `${q.kind}：每个选项都带 text（答案本体）`);
+
+    const idsAreIndexes = q.choices.every((c) => /^\d+$/.test(String(c.id)));
+    eq(idsAreIndexes, true, `${q.kind}：选项 id 是纯序号（所以绝不能当答案用）`);
+
+    // 把某个非答案选项的 id 当答案提交，必须判错 —— 序号不能蒙对
+    const wrongIdx = q.choices.findIndex((c) => c.text !== q.answer);
+    if (wrongIdx >= 0) {
+      const r = await call('POST', '/dsh-spanish/answer', {
+        question: q,
+        given: String(q.choices[wrongIdx].id),
+      });
+      eq(r.json?.result, 'wrong', `${q.kind}：提交选项序号（而不是选项文字）必须判错`);
+    }
+  }
+}
+
 // ─────────────────── /teach（学）───────────────────
 //
 // 这是本来缺的那一步。注意测试里的 ctx 没有 llm，

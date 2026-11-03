@@ -11,6 +11,10 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 
+// 判分函数：用来验证「客户端归一出来的答案，交给判分能不能判对」。
+// 这是端到端的一环 —— 只检查前端代码形状是不够的。
+import { judge } from '../lib/engine/session.js';
+
 const HERE = dirname(fileURLToPath(import.meta.url));
 const CLIENT_PATH = join(HERE, '..', 'lib', 'client.js');
 const SOURCE = readFileSync(CLIENT_PATH, 'utf8');
@@ -414,13 +418,58 @@ for (const [ep, label] of ENDPOINTS) {
   ok(SOURCE.includes(`'${ep}'`) || SOURCE.includes(`"${ep}"`), `客户端调用了 ${ep}（${label}）`);
 }
 
-// 2) 选项格式必须两种都兼容
-//    host 那边阴阳性题给 {value,label}，认词/语法题给 {id,text}。
-//    只读一种的话另一类题会整片空白 —— 这个 bug 真发生过。
-ok(/c\.value\s*\?\?\s*c\.id/.test(SOURCE) || /c\.id\s*\?\?\s*c\.value/.test(SOURCE),
-  '选项渲染兼容 {value} 与 {id} 两种格式');
-ok(/c\.label\s*\?\?\s*c\.text/.test(SOURCE) || /c\.text\s*\?\?\s*c\.label/.test(SOURCE),
-  '选项文案兼容 {label} 与 {text} 两种格式');
+// 2) 选项格式必须两种都兼容 —— 而且要用**真调用**验证，不是看源码长什么样
+//
+// 之前这里是两条正则断言（/c\.value ?? c\.id/ 之类）。它们能通过，
+// 但逻辑本身是错的：认词题的选项是 {id:'0', text:'repetir'}，按 value→id→text
+// 的顺序回退会拿到序号 "0"，点「repetir」实际提交的是 "0"，判分永远错。
+// 正则检查的是「代码长得对不对」，不是「点了之后对不对」——所以这个 bug 一路活着。
+//
+// 现在改成：取出引擎产出的**真实选项**喂给 normalizeChoice，再把结果交给 judge。
+const { normalizeChoice } = exportsObj.__test ?? {};
+
+ok(typeof normalizeChoice === 'function', '客户端导出 normalizeChoice（可被真调用）');
+
+if (typeof normalizeChoice === 'function') {
+  // —— 认词题：{id, text}，答案必须是 text 而不是 id ——
+  const vocabChoice = normalizeChoice({ id: '0', text: 'repetir' });
+  eq(vocabChoice.value, 'repetir', '认词题 {id,text} 的答案取 text，不取序号 id');
+  eq(vocabChoice.label, 'repetir', '认词题展示文案是 text');
+
+  // 认词题正确答案必须能判对
+  const vocabQ = { kind: 'vocab', answer: 'repetir', prompt: '重复' };
+  eq(judge(vocabQ, vocabChoice.value).result, 'correct', '点认词题的正确选项 → 判对');
+  // 干扰项仍然要判错（别为了修 bug 把判分放宽了）
+  eq(judge(vocabQ, normalizeChoice({ id: '2', text: 'pagar' }).value).result, 'wrong',
+    '点认词题的干扰项 → 仍判错');
+
+  // —— 词义方向（es2zh）：选项是中文释义 ——
+  const zhChoice = normalizeChoice({ id: '1', text: '重复' });
+  eq(zhChoice.value, '重复', '中文释义选项同样取 text');
+  eq(judge({ kind: 'vocab', answer: '重复' }, zhChoice.value).result, 'correct', '中文释义判分正常');
+
+  // —— 语法题：同样是 {id, text} ——
+  const grammarChoice = normalizeChoice({ id: '0', text: 'está' });
+  eq(grammarChoice.value, 'está', '语法题 {id,text} 取 text');
+  eq(judge({ kind: 'grammar', answer: 'está' }, grammarChoice.value).result, 'correct', '语法题判对');
+
+  // —— 阴阳性题：{value, label}，value 本身就是答案 ——
+  const genderChoice = normalizeChoice({ value: 'f', label: '阴性 · femenino' });
+  eq(genderChoice.value, 'f', '阴阳性题 {value,label} 取 value');
+  eq(genderChoice.label, '阴性 · femenino', '阴阳性题 label 原样保留（带说明）');
+  eq(judge({ kind: 'gender', answer: 'f' }, genderChoice.value).result, 'correct', '阴阳性判分正常');
+
+  // —— 边界：畸形数据不能把 id 当答案交出去 ——
+  eq(normalizeChoice({ id: '3' }).value, '3', '只有 id 时兜底，但不参与真实题型');
+  eq(normalizeChoice(null).value, '', 'null 选项不崩');
+
+  // 关键回归：任何选项的归一结果都不能是纯序号，
+  // 除非那个序号本来就是答案（阴阳性题的 value 是 m/f，不是数字）
+  for (const raw of [{ id: '0', text: 'repetir' }, { id: '1', text: '重复' }, { value: 'm', label: '阳性' }]) {
+    const got = normalizeChoice(raw).value;
+    eq(/^\d+$/.test(got), false, `选项不会被归一成纯序号：${JSON.stringify(raw)} → ${JSON.stringify(got)}`);
+  }
+}
 
 // 3) 新题型必须在渲染层有专门分支（题干/标签/规则）
 ok(SOURCE.includes('promptOf'), '有统一的题干取值函数');
